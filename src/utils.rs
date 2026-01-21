@@ -1,4 +1,3 @@
-use num::ToPrimitive;
 use num::complex::Complex64;
 
 pub const EPSILON: f64 = 1e-10;
@@ -55,21 +54,6 @@ pub fn format_number(n: Number) -> String {
         }
         Number::Float(f) => format_float(f),
         Number::Complex(c) => format_complex(c),
-    }
-}
-
-pub fn format_number_decimal(n: Number) -> String {
-    match n {
-        Number::Rational(r) => {
-            if r.is_integer() {
-                r.to_integer().to_string()
-            } else {
-                let f = r.to_f64().unwrap_or(f64::NAN);
-                format_float(f)
-            }
-        }
-        // Delegate other types to the standard formatter or handle specifically if needed
-        _ => format_number(n),
     }
 }
 

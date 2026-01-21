@@ -3,11 +3,12 @@ pub mod complex_ops;
 pub mod core_funcs;
 pub mod financial;
 pub mod hyperbolic;
+pub mod logic;
 pub mod statistics;
 pub mod trigonometry;
 
-use crate::engine::types::Number;
 use crate::engine::errors::EngineError;
+use crate::engine::types::Number;
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -19,7 +20,9 @@ pub struct FunctionDef {
 
 inventory::collect!(FunctionDef);
 
-static FUNCTION_REGISTRY: OnceLock<HashMap<&'static str, fn(&[Number]) -> Result<Number, EngineError>>> = OnceLock::new();
+static FUNCTION_REGISTRY: OnceLock<
+    HashMap<&'static str, fn(&[Number]) -> Result<Number, EngineError>>,
+> = OnceLock::new();
 
 fn get_registry() -> &'static HashMap<&'static str, fn(&[Number]) -> Result<Number, EngineError>> {
     FUNCTION_REGISTRY.get_or_init(|| {
