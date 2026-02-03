@@ -1,11 +1,10 @@
+use crate::engine::errors::EngineError;
 use num::complex::Complex64;
 use num::traits::Pow;
 use num::{One, ToPrimitive, Zero};
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
-
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Number {
@@ -39,7 +38,7 @@ impl Number {
             }
         }
     }
-// Number struct definition
+    // Number struct definition
 }
 
 impl PartialOrd for Number {
@@ -195,11 +194,13 @@ pub fn pow(base: Number, exp: Number) -> Number {
     }
 }
 
-pub fn factorial(n: Number) -> Result<Number, String> {
+pub fn factorial(n: Number) -> Result<Number, EngineError> {
     match n {
         Number::Integer(i) => {
             if i < BigInt::zero() {
-                return Err("Factorial of negative integer".into());
+                return Err(EngineError::DomainError(
+                    "Factorial of negative integer".into(),
+                ));
             }
             // Warning: Huge loop for big integers.
             // Simplified loop:
@@ -212,6 +213,8 @@ pub fn factorial(n: Number) -> Result<Number, String> {
             }
             Ok(Number::Integer(acc))
         }
-        _ => Err("Factorial only implemented for Integers currently".into()),
+        _ => Err(EngineError::DomainError(
+            "Factorial only implemented for Integers currently".into(),
+        )),
     }
 }

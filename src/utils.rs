@@ -42,12 +42,17 @@ pub fn format_complex(c: Complex64) -> String {
     }
 }
 
-pub fn format_number(n: Number) -> String {
+pub fn format_number(n: Number, use_decimals: bool) -> String {
     match n {
         Number::Integer(i) => i.to_string(),
         Number::Rational(r) => {
             if r.is_integer() {
                 r.to_integer().to_string()
+            } else if use_decimals {
+                use num::ToPrimitive;
+                let float_val =
+                    r.numer().to_f64().unwrap_or(f64::NAN) / r.denom().to_f64().unwrap_or(f64::NAN);
+                format_float(float_val)
             } else {
                 format!("{}/{}", r.numer(), r.denom())
             }

@@ -61,7 +61,7 @@ pub fn fact(args: &[Number]) -> Result<Number, EngineError> {
     // Actually types.rs defined it as a standalone function `pub fn factorial`.
     // We need to import it or access it. It seems types.rs is in the same module tree.
     // Let's assume crate::engine::types::factorial exists.
-    crate::engine::types::factorial(args[0].clone()).map_err(|e| EngineError::Generic(e))
+    crate::engine::types::factorial(args[0].clone())
 }
 
 pub fn round(args: &[Number]) -> Result<Number, EngineError> {

@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use super::types::{Number, factorial, pow};
-use super::functions;
 use super::errors::EngineError;
+use super::functions;
+use super::types::{Number, factorial, pow};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct UserFunction {
@@ -41,13 +41,26 @@ impl Context {
     }
 
     pub fn set_var(&mut self, name: String, value: Arc<Number>) {
-        // Set in current usage scope (usually global for assignments unless explicit local)
-        // Simplest strategy: Assignment = update closest scope if exists, else define in global? 
-        // OR define in current (top) scope?
-        // Standard scripting: Local assignment -> create local.
-        // Update: update local.
-        // If I want to update Global from Local? `global x`.
-        // NeoCalc approach: Simple dynamic scoping. Assignment always sets in TOP scope.
+        // Update-or-define strategy:
+        // 1. Search for variable in any scope from local to global (rev)
+        // 2. If found, update it in that scope
+        // 3. If not found, insert into current (top) scope
+
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(&name) {
+                scope.insert(name, value);
+                return;
+            }
+        }
+
+        // Not found, so define in current scope
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, value);
+        }
+    }
+
+    // Force definition in current scope (used for function parameters)
+    pub fn define_var(&mut self, name: String, value: Arc<Number>) {
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name, value);
         }
@@ -89,14 +102,14 @@ pub enum Expr {
     FunctionCall(String, Vec<Expr>),
     Assignment(String, Box<Expr>),
     FunctionDef(String, Vec<String>, Box<Expr>),
-} 
+}
 
 impl Expr {
     pub fn eval(&self, context: &mut Context) -> Result<Arc<Number>, EngineError> {
         // Optimization: Iterative traversal for left-associative BinaryOps to prevent stack overflow
         let mut stack = Vec::new();
         let mut current_expr = self;
-        
+
         // Traverse down the left side, pushing operations to stack
         while let Expr::BinaryOp(op, lhs, rhs) = current_expr {
             stack.push((op, rhs));
@@ -106,14 +119,15 @@ impl Expr {
         // Evaluate the leaf (LHS base)
         let mut result = match current_expr {
             Expr::Literal(n) => Ok(Arc::new(n.clone())),
-            Expr::Variable(name) => {
-                context.get_var(name).cloned().ok_or_else(|| EngineError::UndefinedVariable(name.clone()))
-            },
+            Expr::Variable(name) => context
+                .get_var(name)
+                .cloned()
+                .ok_or_else(|| EngineError::UndefinedVariable(name.clone())),
             Expr::Assignment(name, expr) => {
                 let val = expr.eval(context)?;
                 context.set_var(name.clone(), val.clone());
                 Ok(val)
-            },
+            }
             Expr::FunctionDef(name, params, body) => {
                 let func = UserFunction {
                     params: params.clone(),
@@ -121,28 +135,32 @@ impl Expr {
                 };
                 context.functions.insert(name.clone(), func);
                 Ok(Arc::new(Number::Integer(num_bigint::BigInt::from(0))))
-            },
+            }
             Expr::UnaryOp(op, expr) => {
                 let val_arc = expr.eval(context)?;
                 let val = (*val_arc).clone();
                 match op {
                     UnaryOp::Neg => Ok(Arc::new(-val)),
-                    UnaryOp::Factorial => factorial(val).map(Arc::new).map_err(EngineError::Generic),
+                    UnaryOp::Factorial => factorial(val).map(Arc::new),
                 }
-            },
+            }
             Expr::FunctionCall(name, args_exprs) => {
                 let mut args = Vec::with_capacity(args_exprs.len());
                 for arg_expr in args_exprs {
                     args.push(arg_expr.eval(context)?);
                 }
-                
+
                 if let Some(user_func) = context.functions.get(name).cloned() {
                     if args.len() != user_func.params.len() {
-                        return Err(EngineError::ArgumentMismatch(name.clone(), user_func.params.len()));
+                        return Err(EngineError::ArgumentMismatch(
+                            name.clone(),
+                            user_func.params.len(),
+                        ));
                     }
                     context.push_scope();
                     for (param, value) in user_func.params.iter().zip(args.iter()) {
-                        context.set_var(param.clone(), value.clone());
+                        // Use define_var to initialize params in local scope (shadowing globals)
+                        context.define_var(param.clone(), value.clone());
                     }
                     let result = user_func.body.eval(context);
                     context.pop_scope();
@@ -151,7 +169,7 @@ impl Expr {
                     let raw_args: Vec<Number> = args.iter().map(|a| (**a).clone()).collect();
                     functions::apply(name, raw_args).map(Arc::new)
                 }
-            },
+            }
             Expr::BinaryOp(_, _, _) => unreachable!("BinaryOp should be handled by the loop"),
         }?;
 
@@ -170,12 +188,12 @@ impl Expr {
         // Yes. `pop` returns LAST pushed item.
         // Last pushed was `(+, 2)`.
         // So we apply `(+, 2)` then `(+, 3)`. Correct order for `((1+2)+3)`.
-        
+
         while let Some((op, rhs_expr)) = stack.pop() {
             let rhs_arc = rhs_expr.eval(context)?;
             let lhs = (*result).clone();
             let rhs = (*rhs_arc).clone();
-            
+
             let res_num = match op {
                 BinaryOp::Add => lhs + rhs,
                 BinaryOp::Sub => lhs - rhs,
@@ -186,7 +204,7 @@ impl Expr {
             };
             result = Arc::new(res_num);
         }
-        
+
         Ok(result)
     }
 }
