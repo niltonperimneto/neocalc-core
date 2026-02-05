@@ -4,14 +4,43 @@ use num::traits::Pow;
 use num::{One, ToPrimitive, Zero};
 use num_bigint::BigInt;
 use num_rational::BigRational;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Number {
     Integer(BigInt),
     Rational(BigRational),
     Float(f64),
+    #[serde(with = "complex_serde")]
     Complex(Complex64),
+}
+
+/// Custom serde for Complex64 since it doesn't implement Serialize/Deserialize
+mod complex_serde {
+    use num::complex::Complex64;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    struct ComplexRepr {
+        re: f64,
+        im: f64,
+    }
+
+    pub fn serialize<S>(c: &Complex64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ComplexRepr { re: c.re, im: c.im }.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Complex64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let repr = ComplexRepr::deserialize(deserializer)?;
+        Ok(Complex64::new(repr.re, repr.im))
+    }
 }
 
 impl Number {

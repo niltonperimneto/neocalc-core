@@ -1,16 +1,17 @@
 use super::errors::EngineError;
 use super::functions;
 use super::types::{Number, factorial, pow};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserFunction {
     pub params: Vec<String>,
     pub body: Expr,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     pub scopes: Vec<HashMap<String, Arc<Number>>>,
     pub functions: HashMap<String, UserFunction>,
@@ -77,7 +78,7 @@ impl Context {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -87,13 +88,13 @@ pub enum BinaryOp {
     Pow,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UnaryOp {
     Neg,
     Factorial,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
     Literal(Number),
     Variable(String),
