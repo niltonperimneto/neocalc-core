@@ -23,6 +23,9 @@ pub enum EngineError {
     #[error("Parser error: {0}")]
     ParserError(String),
 
+    #[error("Computation exceeds resource limits: {0}")]
+    ResourceLimit(String),
+
     #[error("{0}")]
     Generic(String),
 }

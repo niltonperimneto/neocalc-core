@@ -3,12 +3,12 @@ use crate::engine::functions::FunctionDef;
 use crate::engine::types::Number;
 use num::Zero;
 
-fn is_truthy(n: &Number) -> bool {
-    // Zero is false, anything else is true
+pub fn is_truthy(n: &Number) -> bool {
+    // Zero (and NaN) is false, anything else is true
     match n {
         Number::Integer(i) => !i.is_zero(),
         Number::Rational(r) => !r.is_zero(),
-        Number::Float(f) => *f != 0.0,
+        Number::Float(f) => *f != 0.0 && !f.is_nan(),
         Number::Complex(c) => !c.is_zero(),
     }
 }

@@ -43,11 +43,11 @@ fn test_exact_rational() {
     let mut context = Context::new();
     // (1/3) * 3 = 1
     let res = evaluate("(1 / 3) * 3", &mut context).unwrap();
-    // This should resolve to Rational(1/1) which might normalize?
-    if let Number::Rational(r) = res {
-        assert_eq!(r, BigRational::from_integer(BigInt::from(1)));
+    // Results are simplified to the cleanest type, so Rational(1/1) becomes Integer(1).
+    if let Number::Integer(i) = res {
+        assert_eq!(i, BigInt::from(1));
     } else {
-        panic!("Expected Rational(1)");
+        panic!("Expected Integer(1), got {:?}", res);
     }
 }
 

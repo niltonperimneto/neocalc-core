@@ -51,5 +51,5 @@ pub fn abs(args: &[Number]) -> Result<Number, EngineError> {
 inventory::submit! { FunctionDef { name: "conj", func: conj } }
 inventory::submit! { FunctionDef { name: "re", func: re } }
 inventory::submit! { FunctionDef { name: "im", func: im } }
-inventory::submit! { FunctionDef { name: "lm", func: im } } // Alias
+inventory::submit! { FunctionDef { name: "Im", func: im } } // Alias
 inventory::submit! { FunctionDef { name: "abs", func: abs } }

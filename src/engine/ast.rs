@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Maximum number of nested scopes (≈ user-function call depth) before evaluation
+/// bails out, guarding against stack overflow from unbounded recursion. Tunable.
+const MAX_CALL_DEPTH: usize = 256;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserFunction {
     pub params: Vec<String>,
@@ -146,6 +150,21 @@ impl Expr {
                 }
             }
             Expr::FunctionCall(name, args_exprs) => {
+                // Lazy control flow: `if(cond, then, else)` must only evaluate the
+                // taken branch so users can guard against errors and write recursive
+                // functions with a base case. Skip when shadowed by a user function.
+                if (name == "if" || name == "IF")
+                    && args_exprs.len() == 3
+                    && !context.functions.contains_key(name)
+                {
+                    let cond = args_exprs[0].eval(context)?;
+                    return if crate::engine::functions::logic::is_truthy(&cond) {
+                        args_exprs[1].eval(context)
+                    } else {
+                        args_exprs[2].eval(context)
+                    };
+                }
+
                 let mut args = Vec::with_capacity(args_exprs.len());
                 for arg_expr in args_exprs {
                     args.push(arg_expr.eval(context)?);
@@ -158,6 +177,13 @@ impl Expr {
                             user_func.params.len(),
                         ));
                     }
+                    // Bound recursion depth: each call pushes a scope, so a runaway
+                    // recursion (e.g. `f(x) = f(x)`) would otherwise overflow the stack.
+                    if context.scopes.len() >= MAX_CALL_DEPTH {
+                        return Err(EngineError::ResourceLimit(
+                            "maximum function call depth exceeded".into(),
+                        ));
+                    }
                     context.push_scope();
                     for (param, value) in user_func.params.iter().zip(args.iter()) {
                         // Use define_var to initialize params in local scope (shadowing globals)
@@ -167,7 +193,10 @@ impl Expr {
                     context.pop_scope();
                     result
                 } else {
-                    let raw_args: Vec<Number> = args.iter().map(|a| (**a).clone()).collect();
+                    // Normalize arguments so built-ins receive the simplest real type
+                    // (e.g. `band(10/2, 1)` sees an Integer, not a Rational).
+                    let raw_args: Vec<Number> =
+                        args.iter().map(|a| (**a).clone().normalized()).collect();
                     functions::apply(name, raw_args).map(Arc::new)
                 }
             }
@@ -201,7 +230,7 @@ impl Expr {
                 BinaryOp::Mul => lhs * rhs,
                 BinaryOp::Div => lhs / rhs,
                 BinaryOp::Mod => lhs % rhs,
-                BinaryOp::Pow => pow(lhs, rhs),
+                BinaryOp::Pow => pow(lhs, rhs)?,
             };
             result = Arc::new(res_num);
         }

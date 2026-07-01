@@ -3,8 +3,11 @@ use super::tokens::Token;
 use super::errors::EngineError;
 use super::ast::{Expr, BinaryOp, UnaryOp};
 use logos::Logos;
+use std::ops::Range;
 
-
+/// Maximum nesting depth for the recursive-descent parser. Guards against stack
+/// overflow from pathological input like `((((…))))` or `2^2^2^…`. Tunable.
+const MAX_PARSE_DEPTH: usize = 256;
 
 /// Parses the expression into an Abstract Syntax Tree (AST).
 /// Does NOT evaluate it.
@@ -15,7 +18,11 @@ pub fn parse(expression: &str) -> Result<Expr, EngineError> {
 
     /* Ensure all tokens were consumed */
     if parser.current() != &Token::Eof {
-        return Err(EngineError::ParserError(format!("Unexpected token at end: {:?}", parser.current())));
+        return Err(EngineError::ParserError(format!(
+            "Unexpected token '{}' at {}",
+            describe(parser.current()),
+            pos_str(&parser.span)
+        )));
     }
 
     Ok(result)
@@ -24,12 +31,18 @@ pub fn parse(expression: &str) -> Result<Expr, EngineError> {
 struct Parser<'a> {
     lexer: logos::SpannedIter<'a, Token<'a>>,
     current: Token<'a>,
+    /// Span of `current` in the source; used to report error positions.
+    span: Range<usize>,
+    /// End offset of the last token consumed, used to give EOF a sensible position.
+    last_end: usize,
+    /// Current recursion depth of `parse_bp`, capped at `MAX_PARSE_DEPTH`.
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
     fn new(mut lexer: logos::SpannedIter<'a, Token<'a>>) -> Self {
-        let current = fetch_next_token(&mut lexer);
-        Parser { lexer, current }
+        let (current, span, last_end) = fetch_next_token(&mut lexer, 0);
+        Parser { lexer, current, span, last_end, depth: 0 }
     }
 
     fn current(&self) -> &Token<'a> {
@@ -37,17 +50,38 @@ impl<'a> Parser<'a> {
     }
 
     fn advance(&mut self) {
-        self.current = fetch_next_token(&mut self.lexer);
+        let (token, span, last_end) = fetch_next_token(&mut self.lexer, self.last_end);
+        self.current = token;
+        self.span = span;
+        self.last_end = last_end;
     }
 
-    fn advance_with_token(&mut self) -> Token<'a> {
-        let next = fetch_next_token(&mut self.lexer);
-        std::mem::replace(&mut self.current, next)
+    /// Consume the current token, returning it together with its span.
+    fn advance_with_token(&mut self) -> (Token<'a>, Range<usize>) {
+        let (token, span, last_end) = fetch_next_token(&mut self.lexer, self.last_end);
+        self.last_end = last_end;
+        let old_span = std::mem::replace(&mut self.span, span);
+        let old_token = std::mem::replace(&mut self.current, token);
+        (old_token, old_span)
     }
 
     /* Pratt parsing algorithm: Parse with a minimum binding power */
     fn parse_bp(&mut self, min_bp: u8) -> Result<Expr, EngineError> {
-        let token = self.advance_with_token();
+        // Bound recursion depth to keep deeply nested input from overflowing the stack.
+        self.depth += 1;
+        if self.depth > MAX_PARSE_DEPTH {
+            self.depth -= 1;
+            return Err(EngineError::ParserError(
+                "expression nesting too deep".to_string(),
+            ));
+        }
+        let result = self.parse_bp_inner(min_bp);
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_bp_inner(&mut self, min_bp: u8) -> Result<Expr, EngineError> {
+        let (token, token_span) = self.advance_with_token();
 
         /* Handle the prefix part (numbers, identifiers, parentheses, unary ops) */
         let mut lhs = match token {
@@ -60,7 +94,10 @@ impl<'a> Parser<'a> {
                     self.advance();
                     val
                 } else {
-                    return Err(EngineError::ParserError("Expected ')'".to_string()));
+                    return Err(EngineError::ParserError(format!(
+                        "Expected ')' at {}",
+                        pos_str(&self.span)
+                    )));
                 }
             }
             Token::Minus => {
@@ -68,8 +105,25 @@ impl<'a> Parser<'a> {
                 let rhs = self.parse_bp(r_bp)?;
                 Expr::UnaryOp(UnaryOp::Neg, Box::new(rhs))
             }
-            Token::Eof => return Err(EngineError::ParserError("Unexpected EOF".to_string())),
-            t => return Err(EngineError::ParserError(format!("Unexpected token: {:?}", t))),
+            Token::Eof => {
+                return Err(EngineError::ParserError(format!(
+                    "Unexpected end of input at {}",
+                    pos_str(&token_span)
+                )))
+            }
+            Token::Error => {
+                return Err(EngineError::ParserError(format!(
+                    "Invalid syntax at {}",
+                    pos_str(&token_span)
+                )))
+            }
+            t => {
+                return Err(EngineError::ParserError(format!(
+                    "Unexpected token '{}' at {}",
+                    describe(&t),
+                    pos_str(&token_span)
+                )))
+            }
         };
 
         /* Handle infix and postfix operators while their binding power is high enough */
@@ -109,7 +163,7 @@ impl<'a> Parser<'a> {
             }
 
             let bin_op = if is_explicit {
-                let token = self.advance_with_token();
+                let (token, token_span) = self.advance_with_token();
                 match token {
                     Token::Plus => BinaryOp::Add,
                     Token::Minus => BinaryOp::Sub,
@@ -117,7 +171,13 @@ impl<'a> Parser<'a> {
                     Token::Divide => BinaryOp::Div,
                     Token::Power => BinaryOp::Pow,
                     Token::Percent => BinaryOp::Mod,
-                    _ => return Err(EngineError::ParserError(format!("Unknown infix operator: {:?}", token))),
+                    _ => {
+                        return Err(EngineError::ParserError(format!(
+                            "Unknown infix operator '{}' at {}",
+                            describe(&token),
+                            pos_str(&token_span)
+                        )))
+                    }
                 }
             } else {
                 BinaryOp::Mul
@@ -135,18 +195,18 @@ impl<'a> Parser<'a> {
             Token::LParen => {
                 /* Function call OR Function Definition: name(arg1, ...) = body */
                 self.advance(); /* eat '(' */
-                
+
                 // We need to parse arguments. Accessing args logic.
                 // If it's a definition, args must be identifiers.
                 // But parse_arguments parses Exprs.
                 // We can parse generic Exprs. If we hit '=', check if all args were Variables.
                 let args = self.parse_arguments()?;
-                
+
                 if let Token::Equals = self.current() {
                     // Function Definition
                     self.advance(); // eat '='
                     let body = self.parse_bp(0)?; // Parse body
-                    
+
                     // Validate args are variables
                     let mut params = Vec::new();
                     for arg in args {
@@ -193,7 +253,12 @@ impl<'a> Parser<'a> {
                     self.advance();
                     break;
                 }
-                _ => return Err(EngineError::ParserError("Expected ',' or ')' in argument list".to_string())),
+                _ => {
+                    return Err(EngineError::ParserError(format!(
+                        "Expected ',' or ')' in argument list at {}",
+                        pos_str(&self.span)
+                    )))
+                }
             }
         }
         Ok(args)
@@ -203,7 +268,7 @@ impl<'a> Parser<'a> {
 fn prefix_binding_power(op: &Token) -> Result<((), u8), EngineError> {
     match op {
         Token::Minus => Ok(((), 9)), // Unary minus
-        _ => Err(EngineError::ParserError(format!("Bad prefix operator: {:?}", op))),
+        _ => Err(EngineError::ParserError(format!("Bad prefix operator: {}", describe(op)))),
     }
 }
 
@@ -216,11 +281,48 @@ fn infix_binding_power(op: &Token) -> Option<(u8, u8)> {
     }
 }
 
-// Helper function to fetch the next token from the lexer
-fn fetch_next_token<'a>(lexer: &mut logos::SpannedIter<'a, Token<'a>>) -> Token<'a> {
+/// Format a span start as a human-readable position for error messages.
+fn pos_str(span: &Range<usize>) -> String {
+    format!("position {}", span.start)
+}
+
+/// A short, user-facing description of a token for error messages.
+fn describe(token: &Token) -> String {
+    match token {
+        Token::Plus => "+".to_string(),
+        Token::Minus => "-".to_string(),
+        Token::Multiply => "*".to_string(),
+        Token::Divide => "/".to_string(),
+        Token::Power => "^".to_string(),
+        Token::Factorial => "!".to_string(),
+        Token::Percent => "%".to_string(),
+        Token::LParen => "(".to_string(),
+        Token::RParen => ")".to_string(),
+        Token::Comma => ",".to_string(),
+        Token::Equals => "=".to_string(),
+        Token::Float(f) => f.to_string(),
+        Token::Integer(i) => i.to_string(),
+        Token::Identifier(s) => s.to_string(),
+        Token::Eof => "end of input".to_string(),
+        Token::Error => "invalid token".to_string(),
+    }
+}
+
+// Helper function to fetch the next token from the lexer, returning it with its span.
+// `prev_end` is used to give the EOF token a sensible position.
+fn fetch_next_token<'a>(
+    lexer: &mut logos::SpannedIter<'a, Token<'a>>,
+    prev_end: usize,
+) -> (Token<'a>, Range<usize>, usize) {
     match lexer.next() {
-        Some((Ok(token), _)) => token,
-        Some((Err(_), _)) => Token::Error, // Simple error token
-        None => Token::Eof,
+        Some((Ok(token), span)) => {
+            let end = span.end;
+            (token, span, end)
+        }
+        Some((Err(_), span)) => {
+            let end = span.end;
+            (Token::Error, span, end) // Lexer error becomes an Error token
+        }
+        None => (Token::Eof, prev_end..prev_end, prev_end),
     }
 }

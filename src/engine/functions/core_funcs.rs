@@ -69,6 +69,9 @@ pub fn round(args: &[Number]) -> Result<Number, EngineError> {
     let f = val
         .to_f64()
         .ok_or(EngineError::Generic("Cannot convert to float".into()))?;
+    // Clamp the digit count: f64 carries only ~15 significant digits, so rounding
+    // beyond that is a no-op, and a large multiplier would overflow to infinity.
+    let digits = digits.clamp(-15, 15);
     let multiplier = 10f64.powi(digits);
     Ok(Number::Float((f * multiplier).round() / multiplier))
 }

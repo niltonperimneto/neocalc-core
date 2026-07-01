@@ -41,4 +41,4 @@ inventory::submit! { FunctionDef { name: "asin", func: asin } }
 inventory::submit! { FunctionDef { name: "acos", func: acos } }
 inventory::submit! { FunctionDef { name: "atan", func: atan } }
 // Aliases
-inventory::submit! { FunctionDef { name: "cosin", func: acos } }
+inventory::submit! { FunctionDef { name: "cosin", func: cos } }
