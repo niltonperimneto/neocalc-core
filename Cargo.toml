@@ -20,3 +20,8 @@ rust-embed = "8.0"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
+parking_lot = "0.12"
+dashmap = "6"
+
+[dev-dependencies]
+serde_json = "1.0"

@@ -7,5 +7,6 @@ pub use engine::ast::Context;
 pub use engine::errors::EngineError;
 pub use engine::evaluate;
 pub use engine::types::Number;
+pub use session_manager::{AppSessionManager, PersistError, Settings};
 
 // We need to ensure the engine module is public and accessible
