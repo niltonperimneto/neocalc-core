@@ -260,6 +260,11 @@ pub fn pow(base: Number, exp: Number) -> Result<Number, EngineError> {
 /// Reject integer powers whose result would be prohibitively large before we spend
 /// the CPU/memory building them. Result bit length ≈ exp * base.bits().
 fn check_pow_size(base: &BigInt, exp: u32) -> Result<(), EngineError> {
+    // Bases of -1, 0, or 1 never grow no matter the exponent (all have <= 1 bit),
+    // so they must not be rejected.
+    if base.bits() <= 1 {
+        return Ok(());
+    }
     let estimated_bits = base.bits().saturating_mul(exp as u64);
     if estimated_bits > MAX_POW_RESULT_BITS {
         return Err(EngineError::ResourceLimit(format!(

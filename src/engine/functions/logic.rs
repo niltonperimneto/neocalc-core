@@ -69,8 +69,9 @@ pub fn if_func(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 3 {
         return Err(EngineError::arity("if", 3, args.len()));
     }
-    // args[0] is condition, args[1] is then, args[2] is else
-    // Note: Both branches are already evaluated by the caller in this architecture
+    // args[0] is condition, args[1] is then, args[2] is else.
+    // Note: this eager form is only a fallback. Expr::eval special-cases `if` so
+    // that normally only the taken branch is evaluated (see ast.rs).
     if is_truthy(&args[0]) {
         Ok(args[1].clone())
     } else {

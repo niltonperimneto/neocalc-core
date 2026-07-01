@@ -70,12 +70,9 @@ pub fn fact(args: &[Number]) -> Result<Number, EngineError> {
 
 // Extract the real value of an argument, or report which function needed it.
 fn to_real(val: &Number, name: &str) -> Result<f64, EngineError> {
-    val.to_f64().ok_or_else(|| {
-        EngineError::DomainError(format!(
-            "{} needs a real number, but got {}",
-            name,
-            val.type_name()
-        ))
+    val.to_f64().ok_or_else(|| EngineError::TypeMismatch {
+        expected: format!("a real number (needed by {})", name),
+        got: val.type_name().into(),
     })
 }
 

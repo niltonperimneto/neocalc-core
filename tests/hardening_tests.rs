@@ -105,6 +105,38 @@ fn test_huge_factorial_is_rejected() {
 }
 
 #[test]
+fn test_constant_base_powers_are_not_rejected() {
+    // Bases of -1, 0, 1 never grow, so large exponents must still evaluate.
+    let mut context = Context::new();
+    assert_eq!(
+        evaluate("1^100000000", &mut context).unwrap(),
+        Number::Integer(BigInt::from(1))
+    );
+    let mut context = Context::new();
+    assert_eq!(
+        evaluate("0^100000000", &mut context).unwrap(),
+        Number::Integer(BigInt::from(0))
+    );
+    let mut context = Context::new();
+    assert_eq!(
+        evaluate("(-1)^100000000", &mut context).unwrap(),
+        Number::Integer(BigInt::from(1))
+    );
+}
+
+#[test]
+fn test_non_real_rounding_is_type_error() {
+    // A complex argument to round/floor is a type problem, not a math domain error.
+    let mut context = Context::new();
+    let res = evaluate("floor(sqrt(-1))", &mut context);
+    assert!(
+        matches!(res, Err(EngineError::TypeMismatch { .. })),
+        "Expected TypeMismatch for floor of a complex number, got {:?}",
+        res
+    );
+}
+
+#[test]
 fn test_reasonable_power_and_factorial_still_work() {
     let mut context = Context::new();
     assert!(evaluate("2^100", &mut context).is_ok());
