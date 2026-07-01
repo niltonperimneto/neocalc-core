@@ -7,7 +7,10 @@ use num_bigint::BigInt;
 fn to_int(n: &Number) -> Result<BigInt, EngineError> {
     match n {
         Number::Integer(i) => Ok(i.clone()),
-        _ => Err(EngineError::TypeMismatch("Bitwise operation".into(), "Integer".into())),
+        other => Err(EngineError::TypeMismatch {
+            expected: "a whole number (bitwise operations only work on integers)".into(),
+            got: other.type_name().into(),
+        }),
     }
 }
 
@@ -16,7 +19,7 @@ where
     F: Fn(BigInt, BigInt) -> Result<Number, EngineError>,
 {
     if args.len() != 2 {
-        return Err(EngineError::ArgumentMismatch(name.into(), 2));
+        return Err(EngineError::arity(name, 2, args.len()));
     }
     let a = to_int(&args[0])?;
     let b = to_int(&args[1])?;
@@ -37,7 +40,7 @@ pub fn bxor(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn bnot(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("bnot".into(), 1));
+        return Err(EngineError::arity("bnot", 1, args.len()));
     }
     let a = to_int(&args[0])?;
     Ok(Number::Integer(!a))
@@ -48,7 +51,7 @@ pub fn lsh(args: &[Number]) -> Result<Number, EngineError> {
          if let Some(shift) = b.to_usize() {
              Ok(Number::Integer(a << shift))
          } else {
-             Err(EngineError::Generic("Shift count too large or negative".into()))
+             Err(EngineError::DomainError("shift count must be a non-negative whole number".into()))
          }
     })
 }
@@ -58,7 +61,7 @@ pub fn rsh(args: &[Number]) -> Result<Number, EngineError> {
          if let Some(shift) = b.to_usize() {
              Ok(Number::Integer(a >> shift))
          } else {
-             Err(EngineError::Generic("Shift count too large or negative".into()))
+             Err(EngineError::DomainError("shift count must be a non-negative whole number".into()))
          }
     })
 }
@@ -68,7 +71,7 @@ pub fn rol(args: &[Number]) -> Result<Number, EngineError> {
         if let (Some(val), Some(rot)) = (a.to_i64(), b.to_u32()) {
             Ok(Number::Integer(BigInt::from(val.rotate_left(rot))))
         } else {
-            Err(EngineError::Generic("Rotation arguments too large".into()))
+            Err(EngineError::DomainError("rotate needs a 64-bit integer value and a rotation count that fits in 32 bits".into()))
         }
     })
 }
@@ -78,7 +81,7 @@ pub fn ror(args: &[Number]) -> Result<Number, EngineError> {
         if let (Some(val), Some(rot)) = (a.to_i64(), b.to_u32()) {
             Ok(Number::Integer(BigInt::from(val.rotate_right(rot))))
         } else {
-            Err(EngineError::Generic("Rotation arguments too large".into()))
+            Err(EngineError::DomainError("rotate needs a 64-bit integer value and a rotation count that fits in 32 bits".into()))
         }
     })
 }

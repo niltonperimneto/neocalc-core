@@ -31,7 +31,7 @@ pub fn false_val(_args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn not(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("not".into(), 1));
+        return Err(EngineError::arity("not", 1, args.len()));
     }
     Ok(from_bool(!is_truthy(&args[0])))
 }
@@ -67,7 +67,7 @@ pub fn xor(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn if_func(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 3 {
-        return Err(EngineError::ArgumentMismatch("if".into(), 3));
+        return Err(EngineError::arity("if", 3, args.len()));
     }
     // args[0] is condition, args[1] is then, args[2] is else
     // Note: Both branches are already evaluated by the caller in this architecture

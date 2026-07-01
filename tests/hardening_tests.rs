@@ -208,6 +208,54 @@ fn test_cosin_alias_is_cosine() {
     }
 }
 
+// --- Human-readable error messages ------------------------------------------
+
+fn error_message(expr: &str) -> String {
+    let mut context = Context::new();
+    match evaluate(expr, &mut context) {
+        Ok(n) => panic!("expected an error for {:?}, got {:?}", expr, n),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[test]
+fn test_error_messages_are_human_readable() {
+    // Syntax errors point at the offending position.
+    let msg = error_message("12+=");
+    assert!(
+        msg.starts_with("Syntax error:") && msg.contains("position 3"),
+        "got: {}",
+        msg
+    );
+
+    // Argument-count errors say what was expected and what was received.
+    let msg = error_message("abs(1, 2)");
+    assert!(
+        msg.contains("expects 1 argument") && msg.contains("got 2"),
+        "got: {}",
+        msg
+    );
+
+    // Variable-arity functions describe the accepted range.
+    let msg = error_message("fv(1)");
+    assert!(msg.contains("3 to 5 arguments"), "got: {}", msg);
+
+    // Unknown functions and variables name the offending identifier.
+    assert!(error_message("foo(3)").contains("Unknown function 'foo'"));
+    assert!(error_message("y").contains("Undefined variable 'y'"));
+
+    // Type errors report the actual kind received (not a reversed template).
+    let msg = error_message("band(1.5, 1)");
+    assert!(
+        msg.contains("expected a whole number") && msg.contains("got a real number"),
+        "got: {}",
+        msg
+    );
+
+    // Resource limits explain the cap.
+    assert!(error_message("1000000!").contains("Computation too large"));
+}
+
 #[test]
 fn test_round_absurd_digits_is_finite() {
     let mut context = Context::new();

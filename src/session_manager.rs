@@ -253,7 +253,8 @@ impl AppSessionManager {
                         crate::utils::format_number(num, true)
                     }
                 }
-                Err(e) => format!("Error: {:?}", e),
+                // Use Display (not Debug) so the user sees the human-readable message.
+                Err(e) => format!("Error: {}", e),
             };
             (expr, result)
         } else {

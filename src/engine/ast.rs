@@ -172,17 +172,19 @@ impl Expr {
 
                 if let Some(user_func) = context.functions.get(name).cloned() {
                     if args.len() != user_func.params.len() {
-                        return Err(EngineError::ArgumentMismatch(
+                        return Err(EngineError::arity(
                             name.clone(),
                             user_func.params.len(),
+                            args.len(),
                         ));
                     }
                     // Bound recursion depth: each call pushes a scope, so a runaway
                     // recursion (e.g. `f(x) = f(x)`) would otherwise overflow the stack.
                     if context.scopes.len() >= MAX_CALL_DEPTH {
-                        return Err(EngineError::ResourceLimit(
-                            "maximum function call depth exceeded".into(),
-                        ));
+                        return Err(EngineError::ResourceLimit(format!(
+                            "function '{}' recursed more than {} levels deep",
+                            name, MAX_CALL_DEPTH
+                        )));
                     }
                     context.push_scope();
                     for (param, value) in user_func.params.iter().zip(args.iter()) {

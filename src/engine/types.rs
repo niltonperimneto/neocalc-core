@@ -53,6 +53,16 @@ impl Number {
         }
     }
 
+    /// Human-readable name of the underlying numeric kind, for error messages.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Number::Integer(_) => "an integer",
+            Number::Rational(_) => "a fraction",
+            Number::Float(_) => "a real number",
+            Number::Complex(_) => "a complex number",
+        }
+    }
+
     pub fn to_f64(&self) -> Option<f64> {
         match self {
             Number::Integer(i) => i.to_f64(),
@@ -253,7 +263,7 @@ fn check_pow_size(base: &BigInt, exp: u32) -> Result<(), EngineError> {
     let estimated_bits = base.bits().saturating_mul(exp as u64);
     if estimated_bits > MAX_POW_RESULT_BITS {
         return Err(EngineError::ResourceLimit(format!(
-            "power result would be ~{} bits (limit {})",
+            "this power would produce a number with roughly {} binary digits, above the safety limit of {}",
             estimated_bits, MAX_POW_RESULT_BITS
         )));
     }
@@ -265,13 +275,13 @@ pub fn factorial(n: Number) -> Result<Number, EngineError> {
         Number::Integer(i) => {
             if i < BigInt::zero() {
                 return Err(EngineError::DomainError(
-                    "Factorial of negative integer".into(),
+                    "factorial is not defined for negative numbers".into(),
                 ));
             }
             // Bound the input so we never spin on an unbounded product.
             let n_u64 = i.to_u64().filter(|&n| n <= MAX_FACTORIAL_INPUT).ok_or_else(|| {
                 EngineError::ResourceLimit(format!(
-                    "factorial input exceeds limit ({})",
+                    "factorial is limited to inputs up to {}",
                     MAX_FACTORIAL_INPUT
                 ))
             })?;
@@ -283,9 +293,10 @@ pub fn factorial(n: Number) -> Result<Number, EngineError> {
             }
             Ok(Number::Integer(acc))
         }
-        _ => Err(EngineError::DomainError(
-            "Factorial only implemented for Integers currently".into(),
-        )),
+        other => Err(EngineError::TypeMismatch {
+            expected: "a whole number".into(),
+            got: other.type_name().into(),
+        }),
     }
 }
 

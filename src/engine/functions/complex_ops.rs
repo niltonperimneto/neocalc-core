@@ -5,7 +5,7 @@ use num::Signed;
 
 pub fn conj(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("conj".into(), 1));
+        return Err(EngineError::arity("conj", 1, args.len()));
     }
     match &args[0] {
         Number::Complex(c) => Ok(Number::Complex(c.conj())),
@@ -15,7 +15,7 @@ pub fn conj(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn re(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("re".into(), 1));
+        return Err(EngineError::arity("re", 1, args.len()));
     }
     match &args[0] {
         Number::Complex(c) => Ok(Number::Float(c.re)), // Complex parts are floats
@@ -25,7 +25,7 @@ pub fn re(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn im(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("im".into(), 1));
+        return Err(EngineError::arity("im", 1, args.len()));
     }
     match &args[0] {
         Number::Complex(c) => Ok(Number::Float(c.im)),
@@ -38,7 +38,7 @@ pub fn im(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn abs(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("abs".into(), 1));
+        return Err(EngineError::arity("abs", 1, args.len()));
     }
     match &args[0] {
         Number::Integer(i) => Ok(Number::Integer(i.abs())),
