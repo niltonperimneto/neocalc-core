@@ -120,7 +120,7 @@ pub(crate) fn atomic_write(path: &Path, state: &PersistentState) -> Result<(), P
         serde_json::to_string(state).map_err(|e| PersistError::Serialize(e.to_string()))?;
 
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent).map_err(|e| PersistError::Io(e.to_string()))?;
     }
 
     let tmp = tmp_path(path);
@@ -131,9 +131,11 @@ pub(crate) fn atomic_write(path: &Path, state: &PersistentState) -> Result<(), P
         f.sync_all().map_err(|e| PersistError::Io(e.to_string()))?;
     }
 
-    // Preserve the previous good file as a backup before replacing it.
+    // Preserve the previous good file as a backup before replacing it. If we
+    // cannot create the backup, fail *before* the rename: overwriting the only
+    // good copy without a recovery path would defeat the crash-safety guarantee.
     if path.exists() {
-        let _ = fs::copy(path, bak_path(path));
+        fs::copy(path, bak_path(path)).map_err(|e| PersistError::Io(e.to_string()))?;
     }
 
     fs::rename(&tmp, path).map_err(|e| PersistError::Io(e.to_string()))?;

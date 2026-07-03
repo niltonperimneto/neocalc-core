@@ -26,7 +26,7 @@ use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, SyncSender};
 use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -97,9 +97,16 @@ pub(crate) struct Shared {
     pub load_warning: RwLock<Option<String>>,
 }
 
+/// Bound on the persistence signal queue. `Dirty` messages are idempotent
+/// wake-ups (each write snapshots the whole state), so a full queue simply
+/// means a write is already pending and further signals can be dropped. This
+/// keeps memory bounded even under sustained input, while leaving ample room
+/// for interleaved control messages (`Flush`/`Shutdown`).
+const PERSIST_QUEUE_BOUND: usize = 1024;
+
 pub struct AppSessionManager {
     shared: Arc<Shared>,
-    persist: Sender<PersistMsg>,
+    persist: SyncSender<PersistMsg>,
     writer: Option<JoinHandle<()>>,
 }
 
@@ -185,7 +192,7 @@ impl AppSessionManager {
             load_warning: RwLock::new(warning),
         });
 
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(PERSIST_QUEUE_BOUND);
         let writer = {
             let shared = Arc::clone(&shared);
             std::thread::Builder::new()
@@ -202,7 +209,10 @@ impl AppSessionManager {
     }
 
     fn mark_dirty(&self) {
-        let _ = self.persist.send(PersistMsg::Dirty);
+        // Never block the hot path. A `Dirty` is only a wake-up; if the queue
+        // is full a write is already pending, so a dropped signal is harmless
+        // (the eventual write snapshots the latest state regardless).
+        let _ = self.persist.try_send(PersistMsg::Dirty);
     }
 
     /// Clone the `Arc` for the active session out of the map, releasing the
@@ -321,12 +331,18 @@ impl AppSessionManager {
         let Some(session) = self.active_session() else {
             return "Error".to_string();
         };
-        let new_buf = {
+        let (new_buf, changed) = {
             let mut guard = session.write();
-            guard.buffer = op(&guard.buffer);
-            guard.buffer.clone()
+            let updated = op(&guard.buffer);
+            let changed = updated != guard.buffer;
+            guard.buffer = updated;
+            (guard.buffer.clone(), changed)
         };
-        self.mark_dirty();
+        // Skip persistence work when the buffer is untouched (e.g. input past
+        // `max_buffer_len`, or backspace on an already-empty buffer).
+        if changed {
+            self.mark_dirty();
+        }
         new_buf
     }
 
@@ -392,7 +408,8 @@ impl AppSessionManager {
 
         let (result, is_error) = match outcome {
             Ok(Ok(num)) => (crate::utils::format_number(num, !show_fractions), false),
-            Ok(Err(e)) => (format!("Error: {:?}", e), true),
+            // Use Display (not Debug) so the user sees the human-readable message.
+            Ok(Err(e)) => (format!("Error: {}", e), true),
             Err(_) => ("Error: internal evaluation failure".to_string(), true),
         };
 
@@ -490,7 +507,13 @@ impl AppSessionManager {
             // Writer is gone; persist directly from the calling thread.
             return persistence::snapshot_and_write(&self.shared);
         }
-        rx.recv().unwrap_or(Ok(()))
+        match rx.recv() {
+            Ok(res) => res,
+            // The writer dropped the reply channel (e.g. it died) before
+            // reporting a result. Don't claim durability we didn't achieve:
+            // persist directly and return that outcome.
+            Err(_) => persistence::snapshot_and_write(&self.shared),
+        }
     }
 
     /// Error from the most recent persistence attempt, if any.
