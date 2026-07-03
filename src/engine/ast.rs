@@ -18,7 +18,9 @@ pub struct UserFunction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Context {
     pub scopes: Vec<HashMap<String, Arc<Number>>>,
-    pub functions: HashMap<String, UserFunction>,
+    /// `Arc` so calling a user function shares its body instead of deep-cloning
+    /// the whole AST on every invocation (recursion would clone per level).
+    pub functions: HashMap<String, Arc<UserFunction>>,
 }
 
 impl Default for Context {
@@ -52,8 +54,8 @@ impl Context {
         // 3. If not found, insert into current (top) scope
 
         for scope in self.scopes.iter_mut().rev() {
-            if scope.contains_key(&name) {
-                scope.insert(name, value);
+            if let Some(slot) = scope.get_mut(&name) {
+                *slot = value;
                 return;
             }
         }
@@ -138,7 +140,7 @@ impl Expr {
                     params: params.clone(),
                     body: *body.clone(),
                 };
-                context.functions.insert(name.clone(), func);
+                context.functions.insert(name.clone(), Arc::new(func));
                 Ok(Arc::new(Number::Integer(num_bigint::BigInt::from(0))))
             }
             Expr::UnaryOp(op, expr) => {
@@ -205,22 +207,8 @@ impl Expr {
             Expr::BinaryOp(_, _, _) => unreachable!("BinaryOp should be handled by the loop"),
         }?;
 
-        // Unwind stack: apply operators from left to right (bottom of stack is first op)
-        // Wait. `1+2+3`. Stack: `[(+, 2), (+, 3)]`. (pushed in reverse order?)
-        // `((1+2)+3)`.
-        // `current=1`. Stack pushes: `(+, 3)` first? No.
-        // `BinaryOp(+, BinaryOp(+, 1, 2), 3)`.
-        // Loop 1: `current=Op(+, 1, 2)`. Push `(+, 3)`. `current=lhs` -> `Op(+, 1, 2)`.
-        // Loop 2: `current=Op(+, 1, 2)`.
-        // `stack.push((+, 2))`. `current=1`.
-        // Loop 3: `current=1`. Not BinaryOp. Break.
-        // Stack: `[(+, 3), (+, 2)]`.
-        // We pop `(+, 2)`. Result = `1 + 2`.
-        // We pop `(+, 3)`. Result = `3 + 3`? No `Result + 3`.
-        // Yes. `pop` returns LAST pushed item.
-        // Last pushed was `(+, 2)`.
-        // So we apply `(+, 2)` then `(+, 3)`. Correct order for `((1+2)+3)`.
-
+        // Unwind the stack: ops were pushed outermost-first while walking down the
+        // left spine, so popping applies them innermost-first — i.e. left to right.
         while let Some((op, rhs_expr)) = stack.pop() {
             let rhs_arc = rhs_expr.eval(context)?;
             let lhs = (*result).clone();

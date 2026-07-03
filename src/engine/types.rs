@@ -46,7 +46,7 @@ mod complex_serde {
 impl Number {
     pub fn to_complex(&self) -> Complex64 {
         match self {
-            Number::Integer(i) => Complex64::new(i.to_f64().unwrap_or(f64::INFINITY), 0.0),
+            Number::Integer(i) => Complex64::new(i.to_f64().unwrap_or(f64::NAN), 0.0),
             Number::Rational(r) => Complex64::new(r.to_f64().unwrap_or(f64::NAN), 0.0),
             Number::Float(f) => Complex64::new(*f, 0.0),
             Number::Complex(c) => *c,
@@ -215,11 +215,11 @@ impl Rem for Number {
     }
 }
 
-/// Upper bound on the bit length of an exact integer power result. Beyond this the
-/// allocation/CPU cost is unreasonable for an interactive calculator, so we error
-/// out instead of trying to materialize the value. ~1M bits ≈ 300k decimal digits.
-/// Tunable.
-const MAX_POW_RESULT_BITS: u64 = 1_000_000;
+/// Upper bound on the bit length of an exact integer result (powers, shifts).
+/// Beyond this the allocation/CPU cost is unreasonable for an interactive
+/// calculator, so we error out instead of trying to materialize the value.
+/// ~1M bits ≈ 300k decimal digits. Tunable.
+pub(crate) const MAX_INT_RESULT_BITS: u64 = 1_000_000;
 
 /// Largest `n` for which `n!` is computed exactly. Beyond this the naive product is
 /// too slow / large for interactive use. Tunable.
@@ -266,10 +266,10 @@ fn check_pow_size(base: &BigInt, exp: u32) -> Result<(), EngineError> {
         return Ok(());
     }
     let estimated_bits = base.bits().saturating_mul(exp as u64);
-    if estimated_bits > MAX_POW_RESULT_BITS {
+    if estimated_bits > MAX_INT_RESULT_BITS {
         return Err(EngineError::ResourceLimit(format!(
             "this power would produce a number with roughly {} binary digits, above the safety limit of {}",
-            estimated_bits, MAX_POW_RESULT_BITS
+            estimated_bits, MAX_INT_RESULT_BITS
         )));
     }
     Ok(())

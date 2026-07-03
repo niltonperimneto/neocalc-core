@@ -4,8 +4,13 @@ pub const EPSILON: f64 = 1e-10;
 
 // lock_mutex removed (moved to bindings)
 
+/// Largest magnitude rendered via the integer path: beyond 2^53 an f64 no
+/// longer represents every integer exactly, and casting to i64 would saturate
+/// (e.g. 1e300 must not print as 9223372036854775807).
+const MAX_EXACT_INT_FLOAT: f64 = 9_007_199_254_740_992.0;
+
 pub fn format_float(val: f64) -> String {
-    if val.fract().abs() < EPSILON {
+    if val.is_finite() && val.abs() < MAX_EXACT_INT_FLOAT && val.fract().abs() < EPSILON {
         (val.round() as i64).to_string()
     } else {
         val.to_string()
@@ -50,9 +55,7 @@ pub fn format_number(n: Number, use_decimals: bool) -> String {
                 r.to_integer().to_string()
             } else if use_decimals {
                 use num::ToPrimitive;
-                let float_val =
-                    r.numer().to_f64().unwrap_or(f64::NAN) / r.denom().to_f64().unwrap_or(f64::NAN);
-                format_float(float_val)
+                format_float(r.to_f64().unwrap_or(f64::NAN))
             } else {
                 format!("{}/{}", r.numer(), r.denom())
             }

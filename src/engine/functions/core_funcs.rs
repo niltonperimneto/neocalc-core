@@ -1,15 +1,7 @@
 use crate::engine::errors::EngineError;
-use crate::engine::functions::FunctionDef;
+use crate::engine::functions::{FunctionDef, one_arg};
 use crate::engine::types::Number;
 use num::Signed;
-use num::complex::Complex64;
-
-fn one_arg(args: &[Number], name: &str) -> Result<Complex64, EngineError> {
-    if args.len() != 1 {
-        return Err(EngineError::arity(name, 1, args.len()));
-    }
-    Ok(args[0].to_complex())
-}
 
 pub fn log(args: &[Number]) -> Result<Number, EngineError> {
     Ok(Number::Complex(one_arg(args, "log")?.log(10.0)))

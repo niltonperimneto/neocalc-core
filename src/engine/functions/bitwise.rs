@@ -49,6 +49,16 @@ pub fn bnot(args: &[Number]) -> Result<Number, EngineError> {
 pub fn lsh(args: &[Number]) -> Result<Number, EngineError> {
     apply_binary_op(args, "lsh", |a, b| {
          if let Some(shift) = b.to_usize() {
+             // Bound the result size before allocating: a left shift grows the
+             // value by `shift` bits, so a huge count is a memory bomb.
+             let estimated_bits = a.bits().saturating_add(shift as u64);
+             if estimated_bits > crate::engine::types::MAX_INT_RESULT_BITS {
+                 return Err(EngineError::ResourceLimit(format!(
+                     "this shift would produce a number with roughly {} binary digits, above the safety limit of {}",
+                     estimated_bits,
+                     crate::engine::types::MAX_INT_RESULT_BITS
+                 )));
+             }
              Ok(Number::Integer(a << shift))
          } else {
              Err(EngineError::DomainError("shift count must be a non-negative whole number".into()))
@@ -66,24 +76,22 @@ pub fn rsh(args: &[Number]) -> Result<Number, EngineError> {
     })
 }
 
-pub fn rol(args: &[Number]) -> Result<Number, EngineError> {
-    apply_binary_op(args, "rol", |a, b| {
+fn rotate(args: &[Number], name: &str, f: fn(i64, u32) -> i64) -> Result<Number, EngineError> {
+    apply_binary_op(args, name, |a, b| {
         if let (Some(val), Some(rot)) = (a.to_i64(), b.to_u32()) {
-            Ok(Number::Integer(BigInt::from(val.rotate_left(rot))))
+            Ok(Number::Integer(BigInt::from(f(val, rot))))
         } else {
             Err(EngineError::DomainError("rotate needs a 64-bit integer value and a rotation count that fits in 32 bits".into()))
         }
     })
 }
 
+pub fn rol(args: &[Number]) -> Result<Number, EngineError> {
+    rotate(args, "rol", i64::rotate_left)
+}
+
 pub fn ror(args: &[Number]) -> Result<Number, EngineError> {
-    apply_binary_op(args, "ror", |a, b| {
-        if let (Some(val), Some(rot)) = (a.to_i64(), b.to_u32()) {
-            Ok(Number::Integer(BigInt::from(val.rotate_right(rot))))
-        } else {
-            Err(EngineError::DomainError("rotate needs a 64-bit integer value and a rotation count that fits in 32 bits".into()))
-        }
-    })
+    rotate(args, "ror", i64::rotate_right)
 }
 
 inventory::submit! { FunctionDef { name: "band", func: band } }

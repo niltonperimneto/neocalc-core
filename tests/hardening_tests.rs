@@ -298,3 +298,37 @@ fn test_round_absurd_digits_is_finite() {
         other => panic!("round(5, 1e9) should be finite, got {:?}", other),
     }
 }
+
+// --- Bit-shift and financial-argument bounds ---------------------------------
+
+#[test]
+fn test_huge_left_shift_is_rejected() {
+    // A left shift by an enormous count would allocate the result's full bit
+    // width (~125 GB here); it must be refused, not attempted.
+    let mut context = Context::new();
+    let res = evaluate("lsh(1, 999999999999)", &mut context);
+    assert!(
+        matches!(res, Err(EngineError::ResourceLimit(_))),
+        "Expected ResourceLimit for huge lsh, got {:?}",
+        res
+    );
+}
+
+#[test]
+fn test_reasonable_left_shift_still_works() {
+    let mut context = Context::new();
+    let res = evaluate("lsh(1, 8)", &mut context).unwrap();
+    assert_eq!(res, Number::Integer(BigInt::from(256)));
+}
+
+#[test]
+fn test_irr_requires_arguments() {
+    // With no cash flows, irr used to return a meaningless 0.1 guess.
+    let mut context = Context::new();
+    let res = evaluate("irr()", &mut context);
+    assert!(
+        matches!(res, Err(EngineError::ArgumentMismatch { .. })),
+        "Expected ArgumentMismatch for irr(), got {:?}",
+        res
+    );
+}

@@ -37,8 +37,8 @@ pub enum Token<'a> {
 
     /* Match Integers: digits only */
     #[regex(r"[0-9]+", |lex| lex.slice().parse::<BigInt>().ok())]
-    #[regex(r"0x[0-9a-fA-F]+", |lex| BigInt::parse_bytes(&lex.slice()[2..].as_bytes(), 16))]
-    #[regex(r"0b[01]+", |lex| BigInt::parse_bytes(&lex.slice()[2..].as_bytes(), 2))]
+    #[regex(r"0x[0-9a-fA-F]+", |lex| BigInt::parse_bytes(&lex.slice().as_bytes()[2..], 16))]
+    #[regex(r"0b[01]+", |lex| BigInt::parse_bytes(&lex.slice().as_bytes()[2..], 2))]
     Integer(BigInt),
 
     /* Match variable names or function identifiers */

@@ -1,17 +1,11 @@
 use crate::engine::types::Number;
 use crate::engine::errors::EngineError;
-use crate::engine::functions::FunctionDef;
+use crate::engine::functions::{FunctionDef, require_nonempty};
 use num::Zero;
 use num_bigint::BigInt;
 
 pub fn mean(args: &[Number]) -> Result<Number, EngineError> {
-    if args.is_empty() {
-        return Err(EngineError::ArgumentMismatch {
-            name: "mean".into(),
-            expected: "at least 1 argument".into(),
-            got: 0,
-        });
-    }
+    require_nonempty(args, "mean")?;
     let mut sum = Number::Integer(BigInt::zero());
     for arg in args {
         sum = sum + arg.clone();
@@ -21,13 +15,7 @@ pub fn mean(args: &[Number]) -> Result<Number, EngineError> {
 }
 
 pub fn median(args: &[Number]) -> Result<Number, EngineError> {
-    if args.is_empty() {
-        return Err(EngineError::ArgumentMismatch {
-            name: "median".into(),
-            expected: "at least 1 argument".into(),
-            got: 0,
-        });
-    }
+    require_nonempty(args, "median")?;
 
     // Validate inputs are real numbers (not Complex)
     for n in args {

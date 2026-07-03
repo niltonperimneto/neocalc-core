@@ -294,3 +294,26 @@ fn parallel_access_is_safe_and_consistent() {
     assert!(m.last_persist_error().is_none());
     cleanup(&path);
 }
+
+#[test]
+fn oversized_persisted_buffer_is_reset_on_load() {
+    let path = unique_path();
+    {
+        let m = AppSessionManager::new(path_str(&path));
+        m.clear();
+        m.input("123".to_string());
+        m.flush().expect("flush should succeed");
+    }
+
+    // Tamper with the state file: inflate the buffer past max_buffer_len.
+    let raw = fs::read_to_string(&path).unwrap();
+    let mut state: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let huge = "9".repeat(Settings::default().max_buffer_len + 1);
+    state["sessions"][0]["buffer"] = serde_json::Value::String(huge);
+    fs::write(&path, serde_json::to_string(&state).unwrap()).unwrap();
+
+    // The oversized buffer must be rejected on load, not parsed or kept.
+    let m2 = AppSessionManager::new(path_str(&path));
+    assert_eq!(m2.get_buffer(), "0");
+    cleanup(&path);
+}

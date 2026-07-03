@@ -14,7 +14,7 @@ fn stress_test_parser_depth() {
     // Depth of AST ~ 1000.
     // Parser recursion depth ~ 1000.
     let n = 2000;
-    let expr: String = std::iter::repeat("1").take(n).collect::<Vec<_>>().join(" + ");
+    let expr: String = vec!["1"; n].join(" + ");
     
     let start = Instant::now();
     let res = evaluate(&expr, &mut context);
@@ -49,7 +49,7 @@ fn stress_test_context_cloning_overhead() {
     // 3. Call it repeatedly
     let call_count = 1000;
     let start = Instant::now();
-    for i in 0..call_count {
+    for _ in 0..call_count {
         evaluate("f(1)", &mut context).unwrap();
     }
     let duration = start.elapsed();
@@ -64,13 +64,19 @@ fn stress_test_context_cloning_overhead() {
 #[test]
 fn stress_test_recursion_fib() {
     let mut context = Context::new();
-    
-    // Define naive fibonacci: fib(n) = fib(n-1) + fib(n-2)
-    // Base cases handled by if? We don't have 'if' in Expr yet!
-    // Ah, we can't do recursion without conditionals.
-    // We only have math operators.
-    // So we can't test recursion logic per se without standard library 'if' function.
-    // Assuming we have 'if(cond, true_val, false_val)'.
-    // We don't have an 'if' function in `core_funcs`?
-    // Let's check.
+
+    // Naive fibonacci via lazy `if` (no comparison operators, so the base
+    // cases test `n-1` and `n-2` for zero): fib(1) = fib(2) = 1.
+    evaluate(
+        "fib(n) = if(n - 1, if(n - 2, fib(n - 1) + fib(n - 2), 1), 1)",
+        &mut context,
+    )
+    .unwrap();
+
+    let start = Instant::now();
+    let res = evaluate("fib(20)", &mut context).unwrap();
+    let duration = start.elapsed();
+
+    assert_eq!(res, Number::Integer(BigInt::from(6765)));
+    println!("Recursion Test fib(20): {:?}", duration);
 }
