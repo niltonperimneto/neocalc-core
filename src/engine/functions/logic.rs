@@ -3,12 +3,12 @@ use crate::engine::functions::FunctionDef;
 use crate::engine::types::Number;
 use num::Zero;
 
-fn is_truthy(n: &Number) -> bool {
-    // Zero is false, anything else is true
+pub fn is_truthy(n: &Number) -> bool {
+    // Zero (and NaN) is false, anything else is true
     match n {
         Number::Integer(i) => !i.is_zero(),
         Number::Rational(r) => !r.is_zero(),
-        Number::Float(f) => *f != 0.0,
+        Number::Float(f) => *f != 0.0 && !f.is_nan(),
         Number::Complex(c) => !c.is_zero(),
     }
 }
@@ -31,7 +31,7 @@ pub fn false_val(_args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn not(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("not".into(), 1));
+        return Err(EngineError::arity("not", 1, args.len()));
     }
     Ok(from_bool(!is_truthy(&args[0])))
 }
@@ -67,10 +67,11 @@ pub fn xor(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn if_func(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 3 {
-        return Err(EngineError::ArgumentMismatch("if".into(), 3));
+        return Err(EngineError::arity("if", 3, args.len()));
     }
-    // args[0] is condition, args[1] is then, args[2] is else
-    // Note: Both branches are already evaluated by the caller in this architecture
+    // args[0] is condition, args[1] is then, args[2] is else.
+    // Note: this eager form is only a fallback. Expr::eval special-cases `if` so
+    // that normally only the taken branch is evaluated (see ast.rs).
     if is_truthy(&args[0]) {
         Ok(args[1].clone())
     } else {

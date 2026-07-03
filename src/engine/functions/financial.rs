@@ -14,7 +14,11 @@ fn to_complex_args(args: &[Number]) -> Vec<Complex64> {
 pub fn fv(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 3 || args.len() > 5 {
-        return Err(EngineError::ArgumentMismatch("fv".into(), 3));
+        return Err(EngineError::ArgumentMismatch {
+            name: "fv".into(),
+            expected: "3 to 5 arguments".into(),
+            got: args.len(),
+        });
     }
     let rate = args[0];
     let nper = args[1];
@@ -37,7 +41,11 @@ pub fn fv(args: &[Number]) -> Result<Number, EngineError> {
 pub fn pv(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 3 || args.len() > 5 {
-         return Err(EngineError::ArgumentMismatch("pv".into(), 3));
+         return Err(EngineError::ArgumentMismatch {
+            name: "pv".into(),
+            expected: "3 to 5 arguments".into(),
+            got: args.len(),
+        });
     }
     let rate = args[0];
     let nper = args[1];
@@ -60,7 +68,11 @@ pub fn pv(args: &[Number]) -> Result<Number, EngineError> {
 pub fn pmt(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 3 || args.len() > 5 {
-        return Err(EngineError::ArgumentMismatch("pmt".into(), 3));
+        return Err(EngineError::ArgumentMismatch {
+            name: "pmt".into(),
+            expected: "3 to 5 arguments".into(),
+            got: args.len(),
+        });
     }
     let rate = args[0];
     let nper = args[1];
@@ -84,7 +96,11 @@ pub fn pmt(args: &[Number]) -> Result<Number, EngineError> {
 pub fn nper(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 3 || args.len() > 5 {
-        return Err(EngineError::ArgumentMismatch("nper".into(), 3));
+        return Err(EngineError::ArgumentMismatch {
+            name: "nper".into(),
+            expected: "3 to 5 arguments".into(),
+            got: args.len(),
+        });
     }
     let rate = args[0];
     let pmt = args[1];
@@ -107,7 +123,11 @@ pub fn nper(args: &[Number]) -> Result<Number, EngineError> {
 pub fn npv(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 2 {
-        return Err(EngineError::ArgumentMismatch("npv".into(), 2)); 
+        return Err(EngineError::ArgumentMismatch {
+            name: "npv".into(),
+            expected: "at least 2 arguments".into(),
+            got: args.len(),
+        });
     }
     let rate = args[0];
     let values = &args[1..];
@@ -152,7 +172,11 @@ pub fn irr(args: &[Number]) -> Result<Number, EngineError> {
 pub fn rate(args: &[Number]) -> Result<Number, EngineError> {
     let args = to_complex_args(args);
     if args.len() < 3 {
-        return Err(EngineError::ArgumentMismatch("rate".into(), 3));
+        return Err(EngineError::ArgumentMismatch {
+            name: "rate".into(),
+            expected: "at least 3 arguments".into(),
+            got: args.len(),
+        });
     }
     let nper = args[0].re;
     let pmt = args[1].re;

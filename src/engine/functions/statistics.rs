@@ -5,7 +5,13 @@ use num::Zero;
 use num_bigint::BigInt;
 
 pub fn mean(args: &[Number]) -> Result<Number, EngineError> {
-    if args.is_empty() { return Err(EngineError::ArgumentMismatch("mean".into(), 1)); }
+    if args.is_empty() {
+        return Err(EngineError::ArgumentMismatch {
+            name: "mean".into(),
+            expected: "at least 1 argument".into(),
+            got: 0,
+        });
+    }
     let mut sum = Number::Integer(BigInt::zero());
     for arg in args {
         sum = sum + arg.clone();
@@ -15,12 +21,21 @@ pub fn mean(args: &[Number]) -> Result<Number, EngineError> {
 }
 
 pub fn median(args: &[Number]) -> Result<Number, EngineError> {
-    if args.is_empty() { return Err(EngineError::ArgumentMismatch("median".into(), 1)); }
-    
+    if args.is_empty() {
+        return Err(EngineError::ArgumentMismatch {
+            name: "median".into(),
+            expected: "at least 1 argument".into(),
+            got: 0,
+        });
+    }
+
     // Validate inputs are real numbers (not Complex)
     for n in args {
         if let Number::Complex(_) = n {
-             return Err(EngineError::TypeMismatch("Median requires real numbers".into(), "Complex".into()));
+            return Err(EngineError::TypeMismatch {
+                expected: "real numbers (median can't order complex values)".into(),
+                got: "a complex number".into(),
+            });
         }
     }
 
@@ -42,7 +57,13 @@ pub fn median(args: &[Number]) -> Result<Number, EngineError> {
 }
 
 pub fn variance(args: &[Number]) -> Result<Number, EngineError> {
-    if args.len() < 2 { return Err(EngineError::ArgumentMismatch("variance".into(), 2)); }
+    if args.len() < 2 {
+        return Err(EngineError::ArgumentMismatch {
+            name: "variance".into(),
+            expected: "at least 2 arguments".into(),
+            got: args.len(),
+        });
+    }
     
     let m = mean(args)?;
     let mut sum_sq_diff = Number::Integer(BigInt::zero());
