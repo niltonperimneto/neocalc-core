@@ -10,28 +10,36 @@ fn to_complex_args(args: &[Number]) -> Vec<Complex64> {
     args.iter().map(|n| n.to_complex()).collect()
 }
 
-// Future Value
-pub fn fv(args: &[Number]) -> Result<Number, EngineError> {
-    let args = to_complex_args(args);
+/// Unpack the shared annuity signature `name(a, b, c[, d[, type]])` used by
+/// fv/pv/pmt/nper: three required values, an optional fourth defaulting to
+/// zero, and an optional payment-timing flag as a real factor (0 or 1).
+fn annuity_args(
+    args: &[Number],
+    name: &str,
+) -> Result<(Complex64, Complex64, Complex64, Complex64, f64), EngineError> {
     if args.len() < 3 || args.len() > 5 {
         return Err(EngineError::ArgumentMismatch {
-            name: "fv".into(),
+            name: name.into(),
             expected: "3 to 5 arguments".into(),
             got: args.len(),
         });
     }
-    let rate = args[0];
-    let nper = args[1];
-    let pv = args[2];
-    let pmt = if args.len() >= 4 { args[3] } else { Complex64::zero() };
-    let type_val = if args.len() >= 5 { args[4].re as i32 } else { 0 };
+    let args = to_complex_args(args);
+    let fourth = if args.len() >= 4 { args[3] } else { Complex64::zero() };
+    let type_val = if args.len() >= 5 { args[4].re as i32 as f64 } else { 0.0 };
+    Ok((args[0], args[1], args[2], fourth, type_val))
+}
+
+// Future Value
+pub fn fv(args: &[Number]) -> Result<Number, EngineError> {
+    let (rate, nper, pv, pmt, type_val) = annuity_args(args, "fv")?;
 
     let result = if rate.norm() < 1e-9 {
         -(pv + pmt * nper)
     } else {
         let one = Complex64::new(1.0, 0.0);
         let factor = (one + rate).powc(nper);
-        let term_pmt = (pmt * (one + rate * (type_val as f64))) * ((factor - one) / rate);
+        let term_pmt = (pmt * (one + rate * type_val)) * ((factor - one) / rate);
         -(pv * factor + term_pmt)
     };
     Ok(Number::Complex(result))
@@ -39,26 +47,14 @@ pub fn fv(args: &[Number]) -> Result<Number, EngineError> {
 
 // Present Value
 pub fn pv(args: &[Number]) -> Result<Number, EngineError> {
-    let args = to_complex_args(args);
-    if args.len() < 3 || args.len() > 5 {
-         return Err(EngineError::ArgumentMismatch {
-            name: "pv".into(),
-            expected: "3 to 5 arguments".into(),
-            got: args.len(),
-        });
-    }
-    let rate = args[0];
-    let nper = args[1];
-    let fv = args[2];
-    let pmt = if args.len() >= 4 { args[3] } else { Complex64::zero() };
-    let type_val = if args.len() >= 5 { args[4].re as i32 } else { 0 };
+    let (rate, nper, fv, pmt, type_val) = annuity_args(args, "pv")?;
 
     let result = if rate.norm() < 1e-9 {
         -(fv + pmt * nper)
     } else {
         let one = Complex64::new(1.0, 0.0);
         let factor = (one + rate).powc(nper);
-        let term_pmt = (pmt * (one + rate * (type_val as f64))) * ((factor - one) / rate);
+        let term_pmt = (pmt * (one + rate * type_val)) * ((factor - one) / rate);
         -(fv + term_pmt) / factor
     };
     Ok(Number::Complex(result))
@@ -66,19 +62,7 @@ pub fn pv(args: &[Number]) -> Result<Number, EngineError> {
 
 // Payment
 pub fn pmt(args: &[Number]) -> Result<Number, EngineError> {
-    let args = to_complex_args(args);
-    if args.len() < 3 || args.len() > 5 {
-        return Err(EngineError::ArgumentMismatch {
-            name: "pmt".into(),
-            expected: "3 to 5 arguments".into(),
-            got: args.len(),
-        });
-    }
-    let rate = args[0];
-    let nper = args[1];
-    let pv = args[2];
-    let fv = if args.len() >= 4 { args[3] } else { Complex64::zero() };
-    let type_val = if args.len() >= 5 { args[4].re as i32 } else { 0 };
+    let (rate, nper, pv, fv, type_val) = annuity_args(args, "pmt")?;
 
     let result = if rate.norm() < 1e-9 {
         -(fv + pv) / nper
@@ -86,7 +70,7 @@ pub fn pmt(args: &[Number]) -> Result<Number, EngineError> {
         let one = Complex64::new(1.0, 0.0);
         let factor = (one + rate).powc(nper);
         let num = (pv * factor + fv) * rate;
-        let den = (one + rate * (type_val as f64)) * (factor - one);
+        let den = (one + rate * type_val) * (factor - one);
         -(num / den)
     };
     Ok(Number::Complex(result))
@@ -94,25 +78,13 @@ pub fn pmt(args: &[Number]) -> Result<Number, EngineError> {
 
 // Number of Periods
 pub fn nper(args: &[Number]) -> Result<Number, EngineError> {
-    let args = to_complex_args(args);
-    if args.len() < 3 || args.len() > 5 {
-        return Err(EngineError::ArgumentMismatch {
-            name: "nper".into(),
-            expected: "3 to 5 arguments".into(),
-            got: args.len(),
-        });
-    }
-    let rate = args[0];
-    let pmt = args[1];
-    let pv = args[2];
-    let fv = if args.len() >= 4 { args[3] } else { Complex64::zero() };
-    let type_val = if args.len() >= 5 { args[4].re as i32 } else { 0 };
+    let (rate, pmt, pv, fv, type_val) = annuity_args(args, "nper")?;
 
     if rate.norm() < 1e-9 {
         Ok(Number::Complex(-(fv + pv) / pmt))
     } else {
         let one = Complex64::new(1.0, 0.0);
-        let r_type = one + rate * (type_val as f64);
+        let r_type = one + rate * type_val;
         let num = pmt * r_type - fv * rate;
         let den = pmt * r_type + pv * rate;
         let nper = (num / den).ln() / (one + rate).ln();
@@ -144,6 +116,7 @@ pub fn npv(args: &[Number]) -> Result<Number, EngineError> {
 }
 
 pub fn irr(args: &[Number]) -> Result<Number, EngineError> {
+    crate::engine::functions::require_nonempty(args, "irr")?;
     // Precision Critical: Use Complex64 to handle all root paths and independent powc calls.
     let args = to_complex_args(args);
     let values: Vec<f64> = args.iter().map(|c| c.re).collect();

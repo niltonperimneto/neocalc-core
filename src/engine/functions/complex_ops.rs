@@ -1,7 +1,6 @@
 use crate::engine::errors::EngineError;
 use crate::engine::functions::FunctionDef;
 use crate::engine::types::Number;
-use num::Signed;
 
 pub fn conj(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
@@ -36,20 +35,7 @@ pub fn im(args: &[Number]) -> Result<Number, EngineError> {
     }
 }
 
-pub fn abs(args: &[Number]) -> Result<Number, EngineError> {
-    if args.len() != 1 {
-        return Err(EngineError::arity("abs", 1, args.len()));
-    }
-    match &args[0] {
-        Number::Integer(i) => Ok(Number::Integer(i.abs())),
-        Number::Rational(r) => Ok(Number::Rational(r.abs())),
-        Number::Float(f) => Ok(Number::Float(f.abs())),
-        Number::Complex(c) => Ok(Number::Float(c.norm())),
-    }
-}
-
 inventory::submit! { FunctionDef { name: "conj", func: conj } }
 inventory::submit! { FunctionDef { name: "re", func: re } }
 inventory::submit! { FunctionDef { name: "im", func: im } }
 inventory::submit! { FunctionDef { name: "Im", func: im } } // Alias
-inventory::submit! { FunctionDef { name: "abs", func: abs } }

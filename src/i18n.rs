@@ -57,10 +57,10 @@ impl LocalizationService {
         }
 
         // Add English as fallback (if not already English)
-        if locale != DEFAULT_LOCALE {
-            if let Some(fallback) = Self::load_resource(DEFAULT_LOCALE) {
-                let _ = bundle.add_resource(fallback);
-            }
+        if locale != DEFAULT_LOCALE
+            && let Some(fallback) = Self::load_resource(DEFAULT_LOCALE)
+        {
+            let _ = bundle.add_resource(fallback);
         }
 
         bundle
@@ -81,12 +81,12 @@ impl LocalizationService {
 
     /// Get a localized message with arguments
     pub fn get_with_args(&self, key: &str, args: Option<&FluentArgs>) -> String {
-        if let Some(msg) = self.bundle.get_message(key) {
-            if let Some(pattern) = msg.value() {
-                let mut errors = vec![];
-                let result = self.bundle.format_pattern(pattern, args, &mut errors);
-                return result.into_owned();
-            }
+        if let Some(msg) = self.bundle.get_message(key)
+            && let Some(pattern) = msg.value()
+        {
+            let mut errors = vec![];
+            let result = self.bundle.format_pattern(pattern, args, &mut errors);
+            return result.into_owned();
         }
         // Fallback: return the key itself
         key.to_string()

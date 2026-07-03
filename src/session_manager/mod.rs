@@ -19,6 +19,8 @@ pub use persistence::PersistError;
 use persistence::PersistMsg;
 
 use crate::engine::ast::Context;
+use crate::engine::errors::EngineError;
+use crate::engine::types::Number;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -135,6 +137,13 @@ fn trim_history(history: &mut VecDeque<HistoryEntry>, max: usize) {
     }
 }
 
+/// Evaluate `expr` against the session's context, converting a panic in the
+/// engine into `Err(())` so callers never unwind (e.g. across FFI).
+fn eval_guarded(session: &mut Session, expr: &str) -> Result<Result<Number, EngineError>, ()> {
+    let ctx = &mut session.context;
+    catch_unwind(AssertUnwindSafe(|| crate::engine::evaluate(expr, ctx))).map_err(|_| ())
+}
+
 impl AppSessionManager {
     /// Create a manager with default settings, loading any persisted state.
     pub fn new(storage_path: String) -> Self {
@@ -175,10 +184,14 @@ impl AppSessionManager {
             }
         }
 
-        // Build the concurrent map, enforcing the history bound on load.
+        // Build the concurrent map, enforcing resource bounds on load: a
+        // tampered or corrupt state file must not smuggle in unbounded data.
         let sessions: DashMap<String, Arc<RwLock<Session>>> = DashMap::new();
         for mut s in sess_vec {
             trim_history(&mut s.history, settings.max_history);
+            if s.buffer.len() > settings.max_buffer_len {
+                s.buffer = "0".to_string();
+            }
             sessions.insert(s.id.clone(), Arc::new(RwLock::new(s)));
         }
 
@@ -399,18 +412,11 @@ impl AppSessionManager {
         let mut guard = session.write();
         let expr = guard.buffer.clone();
 
-        // Isolate evaluation: a panic in the engine yields a clean error rather
-        // than poisoning state or unwinding across the FFI boundary.
-        let outcome = {
-            let ctx = &mut guard.context;
-            catch_unwind(AssertUnwindSafe(|| crate::engine::evaluate(&expr, ctx)))
-        };
-
-        let (result, is_error) = match outcome {
+        let (result, is_error) = match eval_guarded(&mut guard, &expr) {
             Ok(Ok(num)) => (crate::utils::format_number(num, !show_fractions), false),
             // Use Display (not Debug) so the user sees the human-readable message.
             Ok(Err(e)) => (format!("Error: {}", e), true),
-            Err(_) => ("Error: internal evaluation failure".to_string(), true),
+            Err(()) => ("Error: internal evaluation failure".to_string(), true),
         };
 
         guard.history.push_back(HistoryEntry {
@@ -447,13 +453,8 @@ impl AppSessionManager {
         let mut guard = session.write();
         let expr = guard.buffer.clone();
 
-        let outcome = {
-            let ctx = &mut guard.context;
-            catch_unwind(AssertUnwindSafe(|| crate::engine::evaluate(&expr, ctx)))
-        };
-
-        match outcome {
-            Ok(Ok(crate::engine::types::Number::Integer(i))) => {
+        match eval_guarded(&mut guard, &expr) {
+            Ok(Ok(Number::Integer(i))) => {
                 let val = match radix {
                     16 => format!("{:X}", i),
                     8 => format!("{:o}", i),
@@ -469,7 +470,7 @@ impl AppSessionManager {
             // Non-integer value or evaluation error.
             Ok(_) => "Not an integer".to_string(),
             // Panic during evaluation.
-            Err(_) => "Error".to_string(),
+            Err(()) => "Error".to_string(),
         }
     }
 
