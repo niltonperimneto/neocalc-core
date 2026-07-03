@@ -5,7 +5,7 @@ use num::complex::Complex64;
 
 fn one_arg(args: &[Number], name: &str) -> Result<Complex64, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch(name.into(), 1));
+        return Err(EngineError::arity(name, 1, args.len()));
     }
     Ok(args[0].to_complex())
 }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +83,12 @@ impl AppSessionManager {
         }
     }
 
+    /// Acquire the state lock, recovering the guard if the mutex was poisoned by a
+    /// panic in another call rather than cascading the panic to every caller.
+    fn lock(&self) -> MutexGuard<'_, AppState> {
+        self.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn default_state() -> (HashMap<String, Session>, String, bool) {
         let id = uuid::Uuid::new_v4().to_string();
         let session = Session {
@@ -100,7 +106,7 @@ impl AppSessionManager {
     }
 
     pub fn get_sessions_overview(&self) -> Vec<SessionOverview> {
-        let state = self.state.lock().unwrap();
+        let state = self.lock();
         let mut overview = Vec::new();
         for session in state.sessions.values() {
             overview.push(SessionOverview {
@@ -114,7 +120,7 @@ impl AppSessionManager {
     }
 
     pub fn create_session(&self) -> String {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         let id = uuid::Uuid::new_v4().to_string();
         let name = format!("Session {}", state.sessions.len() + 1);
 
@@ -135,7 +141,7 @@ impl AppSessionManager {
     }
 
     pub fn switch_session(&self, id: String) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         if state.sessions.contains_key(&id) {
             state.current_session_id = id;
             Self::save(&state);
@@ -146,7 +152,7 @@ impl AppSessionManager {
     }
 
     pub fn delete_session(&self, id: String) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         if state.sessions.len() <= 1 {
             return false; // Cannot delete last session
         }
@@ -166,7 +172,7 @@ impl AppSessionManager {
     }
 
     pub fn rename_session(&self, id: String, new_name: String) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         if let Some(session) = state.sessions.get_mut(&id) {
             session.name = new_name;
             Self::save(&state);
@@ -213,7 +219,7 @@ impl AppSessionManager {
     where
         F: Fn(&String) -> String,
     {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         let id = state.current_session_id.clone();
 
         let new_buf = if let Some(session) = state.sessions.get_mut(&id) {
@@ -232,7 +238,7 @@ impl AppSessionManager {
     }
 
     pub fn evaluate(&self) -> String {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         let id = state.current_session_id.clone();
         let show_fractions = state.show_fractions;
 
@@ -247,7 +253,8 @@ impl AppSessionManager {
                         crate::utils::format_number(num, true)
                     }
                 }
-                Err(e) => format!("Error: {:?}", e),
+                // Use Display (not Debug) so the user sees the human-readable message.
+                Err(e) => format!("Error: {}", e),
             };
             (expr, result)
         } else {
@@ -289,7 +296,7 @@ impl AppSessionManager {
     }
 
     fn convert_base(&self, radix: u32, prefix: &str) -> String {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         let id = state.current_session_id.clone();
 
         if let Some(session) = state.sessions.get_mut(&id) {
@@ -315,7 +322,7 @@ impl AppSessionManager {
     }
 
     pub fn get_buffer(&self) -> String {
-        let state = self.state.lock().unwrap();
+        let state = self.lock();
         if let Some(session) = state.sessions.get(&state.current_session_id) {
             session.buffer.clone()
         } else {
@@ -324,7 +331,7 @@ impl AppSessionManager {
     }
 
     pub fn get_last_result(&self) -> Option<String> {
-        let state = self.state.lock().unwrap();
+        let state = self.lock();
         state
             .sessions
             .get(&state.current_session_id)
@@ -332,7 +339,7 @@ impl AppSessionManager {
     }
 
     pub fn get_history(&self) -> Vec<HistoryEntry> {
-        let state = self.state.lock().unwrap();
+        let state = self.lock();
         if let Some(session) = state.sessions.get(&state.current_session_id) {
             session.history.clone()
         } else {
@@ -341,7 +348,7 @@ impl AppSessionManager {
     }
 
     pub fn set_fraction_display(&self, enabled: bool) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         state.show_fractions = enabled;
         Self::save(&state);
     }

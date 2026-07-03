@@ -53,6 +53,16 @@ impl Number {
         }
     }
 
+    /// Human-readable name of the underlying numeric kind, for error messages.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Number::Integer(_) => "an integer",
+            Number::Rational(_) => "a fraction",
+            Number::Float(_) => "a real number",
+            Number::Complex(_) => "a complex number",
+        }
+    }
+
     pub fn to_f64(&self) -> Option<f64> {
         match self {
             Number::Integer(i) => i.to_f64(),
@@ -182,8 +192,20 @@ impl Rem for Number {
     type Output = Number;
     fn rem(self, rhs: Self) -> Self::Output {
         match promote(self, rhs) {
-            (Number::Integer(l), Number::Integer(r)) => Number::Integer(l % r),
-            (Number::Rational(l), Number::Rational(r)) => Number::Rational(l % r),
+            // Guard against remainder-by-zero: BigInt/BigRational `%` panics on a
+            // zero divisor (unlike float). Mirror `Div` and return IEEE NaN instead.
+            (Number::Integer(l), Number::Integer(r)) => {
+                if r.is_zero() {
+                    return Number::Float(f64::NAN);
+                }
+                Number::Integer(l % r)
+            }
+            (Number::Rational(l), Number::Rational(r)) => {
+                if r.is_zero() {
+                    return Number::Float(f64::NAN);
+                }
+                Number::Rational(l % r)
+            }
             (Number::Float(l), Number::Float(r)) => Number::Float(l % r),
             // The remainder operator is not well-defined for complex numbers.
             // Returning NaN is a safe way to signal an invalid operation.
@@ -193,34 +215,64 @@ impl Rem for Number {
     }
 }
 
-pub fn pow(base: Number, exp: Number) -> Number {
+/// Upper bound on the bit length of an exact integer power result. Beyond this the
+/// allocation/CPU cost is unreasonable for an interactive calculator, so we error
+/// out instead of trying to materialize the value. ~1M bits ≈ 300k decimal digits.
+/// Tunable.
+const MAX_POW_RESULT_BITS: u64 = 1_000_000;
+
+/// Largest `n` for which `n!` is computed exactly. Beyond this the naive product is
+/// too slow / large for interactive use. Tunable.
+const MAX_FACTORIAL_INPUT: u64 = 50_000;
+
+pub fn pow(base: Number, exp: Number) -> Result<Number, EngineError> {
     match (base, exp) {
         // Power of integer by integer
         (Number::Integer(b), Number::Integer(e)) => {
             // Positive exponent
             if e >= BigInt::zero() {
                 if let Some(e_u32) = e.to_u32() {
-                    return Number::Integer(b.pow(e_u32));
+                    check_pow_size(&b, e_u32)?;
+                    return Ok(Number::Integer(b.pow(e_u32)));
                 }
             }
             // Negative exponent
             else {
                 if let Some(e_u32) = (-&e).to_u32() {
+                    check_pow_size(&b, e_u32)?;
                     let den = b.pow(e_u32);
                     if den.is_zero() {
-                        return Number::Float(f64::INFINITY);
+                        return Ok(Number::Float(f64::INFINITY));
                     } // e.g. 0^-2 -> inf
-                    return Number::Rational(BigRational::new(BigInt::one(), den));
+                    return Ok(Number::Rational(BigRational::new(BigInt::one(), den)));
                 }
             }
             // Exponent is too large for u32, fall back to float calculation
             let b_f64 = b.to_f64().unwrap_or(f64::NAN);
             let e_f64 = e.to_f64().unwrap_or(f64::NAN);
-            Number::Float(b_f64.powf(e_f64))
+            Ok(Number::Float(b_f64.powf(e_f64)))
         }
         // Fallback to complex powers for all other cases
-        (b, e) => Number::Complex(b.to_complex().powc(e.to_complex())),
+        (b, e) => Ok(Number::Complex(b.to_complex().powc(e.to_complex()))),
     }
+}
+
+/// Reject integer powers whose result would be prohibitively large before we spend
+/// the CPU/memory building them. Result bit length ≈ exp * base.bits().
+fn check_pow_size(base: &BigInt, exp: u32) -> Result<(), EngineError> {
+    // Bases of -1, 0, or 1 never grow no matter the exponent (all have <= 1 bit),
+    // so they must not be rejected.
+    if base.bits() <= 1 {
+        return Ok(());
+    }
+    let estimated_bits = base.bits().saturating_mul(exp as u64);
+    if estimated_bits > MAX_POW_RESULT_BITS {
+        return Err(EngineError::ResourceLimit(format!(
+            "this power would produce a number with roughly {} binary digits, above the safety limit of {}",
+            estimated_bits, MAX_POW_RESULT_BITS
+        )));
+    }
+    Ok(())
 }
 
 pub fn factorial(n: Number) -> Result<Number, EngineError> {
@@ -228,22 +280,42 @@ pub fn factorial(n: Number) -> Result<Number, EngineError> {
         Number::Integer(i) => {
             if i < BigInt::zero() {
                 return Err(EngineError::DomainError(
-                    "Factorial of negative integer".into(),
+                    "factorial is not defined for negative numbers".into(),
                 ));
             }
-            // Warning: Huge loop for big integers.
-            // Simplified loop:
+            // Bound the input so we never spin on an unbounded product.
+            let n_u64 = i.to_u64().filter(|&n| n <= MAX_FACTORIAL_INPUT).ok_or_else(|| {
+                EngineError::ResourceLimit(format!(
+                    "factorial is limited to inputs up to {}",
+                    MAX_FACTORIAL_INPUT
+                ))
+            })?;
+            // Multiply a primitive counter into the accumulator to avoid allocating
+            // a fresh BigInt for the loop variable on every iteration.
             let mut acc = BigInt::one();
-            let mut k = BigInt::one();
-            while k <= i {
-                acc = acc * &k;
-                k = k + 1;
-                // Safety brake? No, user asked for "Infinite" calculator.
+            for k in 2..=n_u64 {
+                acc *= k;
             }
             Ok(Number::Integer(acc))
         }
-        _ => Err(EngineError::DomainError(
-            "Factorial only implemented for Integers currently".into(),
-        )),
+        other => Err(EngineError::TypeMismatch {
+            expected: "a whole number".into(),
+            got: other.type_name().into(),
+        }),
+    }
+}
+
+impl Number {
+    /// Collapse a value to its simplest real representation:
+    /// - a complex number with negligible imaginary part becomes a real float, so
+    ///   real-valued functions (`sqrt`, `sin`, …) don't infect downstream math;
+    /// - a rational with denominator 1 becomes an integer, so results like `10/2`
+    ///   are predictable and usable by integer-only functions (e.g. `band`).
+    pub fn normalized(self) -> Number {
+        match self {
+            Number::Complex(c) if c.im.abs() < crate::utils::EPSILON => Number::Float(c.re),
+            Number::Rational(r) if r.is_integer() => Number::Integer(r.to_integer()),
+            other => other,
+        }
     }
 }

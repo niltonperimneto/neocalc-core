@@ -6,7 +6,7 @@ use num::complex::Complex64;
 
 fn one_arg(args: &[Number], name: &str) -> Result<Complex64, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch(name.into(), 1));
+        return Err(EngineError::arity(name, 1, args.len()));
     }
     Ok(args[0].to_complex())
 }
@@ -24,9 +24,13 @@ pub fn sqrt(args: &[Number]) -> Result<Number, EngineError> {
 }
 
 // Helper for optional second argument (default 0)
-fn get_two_args(args: &[Number]) -> Result<(Number, i32), EngineError> {
+fn get_two_args(args: &[Number], name: &str) -> Result<(Number, i32), EngineError> {
     if args.is_empty() || args.len() > 2 {
-        return Err(EngineError::ArgumentMismatch("function".into(), 1)); // Simplified error
+        return Err(EngineError::ArgumentMismatch {
+            name: name.into(),
+            expected: "1 or 2 arguments".into(),
+            got: args.len(),
+        });
     }
     let val = args[0].clone();
     let digits = if args.len() == 2 {
@@ -42,7 +46,7 @@ fn get_two_args(args: &[Number]) -> Result<(Number, i32), EngineError> {
 
 pub fn abs(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("abs".into(), 1));
+        return Err(EngineError::arity("abs", 1, args.len()));
     }
     // Generic abs logic
     match &args[0] {
@@ -55,7 +59,7 @@ pub fn abs(args: &[Number]) -> Result<Number, EngineError> {
 
 pub fn fact(args: &[Number]) -> Result<Number, EngineError> {
     if args.len() != 1 {
-        return Err(EngineError::ArgumentMismatch("fact".into(), 1));
+        return Err(EngineError::arity("fact", 1, args.len()));
     }
     // Using the function defined in types.rs (re-exported or accessible?)
     // Actually types.rs defined it as a standalone function `pub fn factorial`.
@@ -64,37 +68,40 @@ pub fn fact(args: &[Number]) -> Result<Number, EngineError> {
     crate::engine::types::factorial(args[0].clone())
 }
 
+// Extract the real value of an argument, or report which function needed it.
+fn to_real(val: &Number, name: &str) -> Result<f64, EngineError> {
+    val.to_f64().ok_or_else(|| EngineError::TypeMismatch {
+        expected: format!("a real number (needed by {})", name),
+        got: val.type_name().into(),
+    })
+}
+
 pub fn round(args: &[Number]) -> Result<Number, EngineError> {
-    let (val, digits) = get_two_args(args)?;
-    let f = val
-        .to_f64()
-        .ok_or(EngineError::Generic("Cannot convert to float".into()))?;
+    let (val, digits) = get_two_args(args, "round")?;
+    let f = to_real(&val, "round")?;
+    // Clamp the digit count: f64 carries only ~15 significant digits, so rounding
+    // beyond that is a no-op, and a large multiplier would overflow to infinity.
+    let digits = digits.clamp(-15, 15);
     let multiplier = 10f64.powi(digits);
     Ok(Number::Float((f * multiplier).round() / multiplier))
 }
 
 pub fn floor(args: &[Number]) -> Result<Number, EngineError> {
-    let (val, _digits) = get_two_args(args)?; // OpenFormula FLOOR has significance, we simplify to math floor for now or implement significance later if requested exact ODFF.
+    let (val, _digits) = get_two_args(args, "floor")?; // OpenFormula FLOOR has significance, we simplify to math floor for now or implement significance later if requested exact ODFF.
     // Standard Math FLOOR(x)
-    let f = val
-        .to_f64()
-        .ok_or(EngineError::Generic("Cannot convert to float".into()))?;
+    let f = to_real(&val, "floor")?;
     Ok(Number::Float(f.floor()))
 }
 
 pub fn ceiling(args: &[Number]) -> Result<Number, EngineError> {
-    let (val, _digits) = get_two_args(args)?;
-    let f = val
-        .to_f64()
-        .ok_or(EngineError::Generic("Cannot convert to float".into()))?;
+    let (val, _digits) = get_two_args(args, "ceil")?;
+    let f = to_real(&val, "ceil")?;
     Ok(Number::Float(f.ceil()))
 }
 
 pub fn trunc(args: &[Number]) -> Result<Number, EngineError> {
-    let (val, _digits) = get_two_args(args)?;
-    let f = val
-        .to_f64()
-        .ok_or(EngineError::Generic("Cannot convert to float".into()))?;
+    let (val, _digits) = get_two_args(args, "trunc")?;
+    let f = to_real(&val, "trunc")?;
     Ok(Number::Float(f.trunc()))
 }
 
